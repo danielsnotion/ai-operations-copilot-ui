@@ -7,6 +7,7 @@ import os
 
 load_dotenv()
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
+
 st.set_page_config(layout="wide")
 st.title("🤖 AI Operations Copilot")
 
@@ -47,7 +48,11 @@ if "feedback_status" not in st.session_state:
 if "streaming" not in st.session_state:
     st.session_state.streaming = False
 
-# ---------------- CLEAN CSS ---------------- #
+# ✅ NEW STATE
+if "thinking" not in st.session_state:
+    st.session_state.thinking = False
+
+# ---------------- CSS ---------------- #
 st.markdown("""
 <style>
 .block-container {
@@ -178,53 +183,19 @@ with tab1:
                 elif feedback:
                     st.caption(f"Feedback: {feedback}")
 
-    # -------- STREAMING (ABOVE INPUT) -------- #
-    if st.session_state.streaming:
-
+    # -------- THINKING -------- #
+    if st.session_state.thinking and not st.session_state.streaming:
         with st.chat_message("assistant"):
-            st.caption(f"⚙️ {st.session_state.framework} | {st.session_state.llm_model}")
-            streamed_text = stream_text(st.session_state.streaming_text)
+            st.markdown("🤖 Thinking...")
 
-        st.session_state.pending_response = {
-            "id": str(uuid.uuid4()),
-            "role": "assistant",
-            "content": streamed_text,
-            "query": st.session_state.last_query,
-            "feedback": None,
-            "trace": st.session_state.last_trace,
-            "latency": st.session_state.last_latency
-        }
-
-        st.session_state.streaming = False
-        st.rerun()
-
-    # -------- INPUT (ALWAYS VISIBLE) -------- #
-    query = st.chat_input(
-        "Ask your question...",
-        disabled=st.session_state.streaming
-    )
-
-    # -------- HANDLE QUERY -------- #
-    if query:
-
-        if not st.session_state.auth_mode:
-            st.warning("⚠️ Please login or provide API key first")
-            st.stop()
-
-        # Show user immediately
-        st.session_state.messages.append({
-            "id": str(uuid.uuid4()),
-            "role": "user",
-            "content": query
-        })
-
-        auto_scroll()
+    # -------- PROCESS AFTER THINKING -------- #
+    if st.session_state.thinking and not st.session_state.streaming:
 
         try:
             response = requests.post(
                 f"{BACKEND_URL}/ask",
                 json={
-                    "query": query,
+                    "query": st.session_state.last_query,
                     "llm_model": llm_model,
                     "framework": framework,
                     "api_key": st.session_state.api_key,
@@ -248,15 +219,60 @@ with tab1:
             trace = []
             latency = None
 
-        # Store for streaming
+        st.session_state.thinking = False
         st.session_state.streaming = True
         st.session_state.streaming_text = answer
-        st.session_state.last_query = query
         st.session_state.last_trace = trace
         st.session_state.last_latency = latency
         st.session_state.framework = framework
         st.session_state.llm_model = llm_model
 
+        st.rerun()
+
+    # -------- STREAMING -------- #
+    if st.session_state.streaming:
+
+        with st.chat_message("assistant"):
+            st.caption(f"⚙️ {st.session_state.framework} | {st.session_state.llm_model}")
+            streamed_text = stream_text(st.session_state.streaming_text)
+
+        st.session_state.pending_response = {
+            "id": str(uuid.uuid4()),
+            "role": "assistant",
+            "content": streamed_text,
+            "query": st.session_state.last_query,
+            "feedback": None,
+            "trace": st.session_state.last_trace,
+            "latency": st.session_state.last_latency
+        }
+
+        st.session_state.streaming = False
+        st.rerun()
+
+    # -------- INPUT -------- #
+    query = st.chat_input(
+        "Ask your question...",
+        disabled=st.session_state.streaming
+    )
+
+    # -------- HANDLE QUERY -------- #
+    if query:
+
+        if not st.session_state.auth_mode:
+            st.warning("⚠️ Please login or provide API key first")
+            st.stop()
+
+        st.session_state.messages.append({
+            "id": str(uuid.uuid4()),
+            "role": "user",
+            "content": query
+        })
+
+        # 🔥 ENABLE THINKING
+        st.session_state.thinking = True
+        st.session_state.last_query = query
+
+        auto_scroll()
         st.rerun()
 
 # ================= DATA TAB ================= #
